@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>体験型カメラデジタルサイネージ | 英智祭</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@800;900&family=Outfit:wght@800;900&family=Zen+Maru+Gothic:wght@900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            background-color: #000;
+            font-family: 'Zen Maru Gothic', 'M PLUS Rounded 1c', sans-serif;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            position: relative;
+            color: #fff;
+        }
+
+        /* 背景：鏡像（ミラー反転）カメラ映像 */
+        #webcam {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* 鏡のように反転 */
+            z-index: 1;
+        }
+
+        /* カメラ上の薄暗いオーバーレイ（UIを際立たせる） */
+        .camera-dimmer {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, rgba(10, 15, 26, 0.25) 0%, rgba(5, 8, 15, 0.7) 100%);
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* キラキラ・エフェクト描画Canvas */
+        #fxCanvas {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 5;
+            pointer-events: none;
+        }
+
+        /* 動作検出用の非表示Canvas */
+        #motionCanvas {
+            display: none;
+        }
+
+        /* 画面上部の控えめなガイド */
+        .top-hint {
+            position: absolute;
+            top: 3vh;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 8px 28px;
+            border-radius: 999px;
+            font-size: 1.3vw;
+            font-weight: 800;
+            letter-spacing: 0.1em;
+            color: rgba(255, 255, 255, 0.85);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            animation: hintPulse 3s infinite ease-in-out;
+            pointer-events: none;
+        }
+
+        @keyframes hintPulse {
+            0%, 100% { opacity: 0.7; transform: translateX(-50%) scale(1); }
+            50% { opacity: 1; transform: translateX(-50%) scale(1.03); }
+        }
+
+        /* 矢印コンテナ群 */
+        .interactive-zone {
+            position: absolute;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* ← 左の矢印（華道部） */
+        #target-left {
+            top: 50%;
+            left: 5vw;
+            animation: floatLeft 4.5s ease-in-out infinite alternate;
+        }
+
+        /* ↑ 上・中央の矢印（PR動画） */
+        #target-up {
+            top: 10vh;
+            left: 50%;
+            animation: floatUp 4s ease-in-out infinite alternate;
+        }
+
+        /* → 右の矢印（各ブース） */
+        #target-right {
+            top: 50%;
+            right: 5vw;
+            animation: floatRight 4.5s ease-in-out infinite alternate;
+        }
+
+        /* ふわふわ浮遊するキーフレーム */
+        @keyframes floatLeft {
+            0% { transform: translateY(-50%) translate(0, 0) rotate(0deg); }
+            50% { transform: translateY(-50%) translate(-15px, -18px) rotate(-3deg); }
+            100% { transform: translateY(-50%) translate(10px, 14px) rotate(2deg); }
+        }
+        @keyframes floatUp {
+            0% { transform: translateX(-50%) translate(0, 0) rotate(0deg); }
+            50% { transform: translateX(-50%) translate(-12px, -20px) rotate(2deg); }
+            100% { transform: translateX(-50%) translate(12px, 12px) rotate(-2deg); }
+        }
+        @keyframes floatRight {
+            0% { transform: translateY(-50%) translate(0, 0) rotate(0deg); }
+            50% { transform: translateY(-50%) translate(15px, -18px) rotate(3deg); }
+            100% { transform: translateY(-50%) translate(-10px, 14px) rotate(-2deg); }
+        }
+
+        /* 矢印本体（巨大な図形描画グラフィックス） */
+        .giant-arrow {
+            width: 24vw;
+            max-width: 320px;
+            height: auto;
+            aspect-ratio: 1 / 1;
+            filter: drop-shadow(0 15px 30px rgba(0, 0, 0, 0.6))
+                    drop-shadow(0 0 20px rgba(255, 255, 255, 0.2));
+            transition: all 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .giant-arrow svg {
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+
+        /* 図形のグラデーション・すりガラス質感 */
+        .arrow-shape {
+            fill: url(#glassGradient);
+            stroke: rgba(255, 255, 255, 0.6);
+            stroke-width: 2.5;
+            backdrop-filter: blur(16px);
+            transition: all 0.35s ease;
+        }
+
+        .arrow-highlight {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.9);
+            stroke-width: 3;
+            stroke-linecap: round;
+        }
+
+        /* 検出時に飛び出す巨大テキスト */
+        .revealed-text {
+            position: absolute;
+            white-space: nowrap;
+            font-size: 5.2vw;
+            font-weight: 900;
+            letter-spacing: 0.12em;
+            opacity: 0;
+            transform: scale(0.6);
+            transition: opacity 0.25s ease-out, transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none;
+            z-index: 20;
+        }
+
+        /* 文字の配置位置 */
+        #target-left .revealed-text {
+            left: 105%;
+            top: 50%;
+            transform: translateY(-50%) scale(0.6);
+        }
+
+        #target-up .revealed-text {
+            top: 105%;
+            left: 50%;
+            transform: translateX(-50%) scale(0.6);
+        }
+
+        #target-right .revealed-text {
+            right: 105%;
+            top: 50%;
+            transform: translateY(-50%) scale(0.6);
+        }
+
+        /* =========================================
+           アクティブ（手で触れた時）の巨大ネオン変身
+           ========================================= */
+
+        /* ← 華道部（アクティブ：ネオングリーン＆エメラルド） */
+        .interactive-zone.active#target-left .giant-arrow {
+            transform: scale(1.18);
+            filter: drop-shadow(0 0 40px #00ffaa) 
+                    drop-shadow(0 0 80px rgba(16, 230, 140, 0.8))
+                    drop-shadow(0 15px 35px rgba(0, 0, 0, 0.8));
+        }
+        .interactive-zone.active#target-left .arrow-shape {
+            fill: url(#greenGradient);
+            stroke: #00ffaa;
+            stroke-width: 4;
+        }
+        .interactive-zone.active#target-left .revealed-text {
+            opacity: 1;
+            transform: translateY(-50%) scale(1);
+            color: #ffffff;
+            background: linear-gradient(135deg, #00ffaa 0%, #34d399 40%, #fb7185 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 25px rgba(0, 255, 170, 1)) 
+                    drop-shadow(0 0 50px rgba(244, 63, 94, 0.9))
+                    drop-shadow(0 8px 16px rgba(0,0,0,0.9));
+        }
+
+        /* ↑ PR動画（アクティブ：ビビッドネオンピンク） */
+        .interactive-zone.active#target-up .giant-arrow {
+            transform: scale(1.18);
+            filter: drop-shadow(0 0 40px #ff007f) 
+                    drop-shadow(0 0 80px rgba(255, 0, 128, 0.85))
+                    drop-shadow(0 15px 35px rgba(0, 0, 0, 0.8));
+        }
+        .interactive-zone.active#target-up .arrow-shape {
+            fill: url(#pinkGradient);
+            stroke: #ff007f;
+            stroke-width: 4;
+        }
+        .interactive-zone.active#target-up .revealed-text {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
+            color: #ffffff;
+            background: linear-gradient(135deg, #ffffff 0%, #ff4d6d 35%, #ff007f 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 25px rgba(255, 0, 127, 1)) 
+                    drop-shadow(0 0 50px rgba(255, 77, 109, 0.9))
+                    drop-shadow(0 8px 16px rgba(0,0,0,0.9));
+        }
+
+        /* → 各ブース（アクティブ：ビビッドゴールド＆シアン） */
+        .interactive-zone.active#target-right .giant-arrow {
+            transform: scale(1.18);
+            filter: drop-shadow(0 0 40px #ffd60a) 
+                    drop-shadow(0 0 80px rgba(0, 242, 254, 0.85))
+                    drop-shadow(0 15px 35px rgba(0, 0, 0, 0.8));
+        }
+        .interactive-zone.active#target-right .arrow-shape {
+            fill: url(#goldGradient);
+            stroke: #ffd60a;
+            stroke-width: 4;
+        }
+        /* ← 華道部（アクティブ：ビビッドゴールド＆シアン） */
+        .interactive-zone.active#target-right .revealed-text {
+            opacity: 1;
+            transform: translateY(-50%) scale(1);
+            color: #ffffff;
+            background: linear-gradient(135deg, #ffffff 0%, #ffd60a 40%, #00f2fe 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 25px rgba(255, 214, 10, 1)) 
+                    drop-shadow(0 0 50px rgba(0, 242, 254, 0.9))
+                    drop-shadow(0 8px 16px rgba(0,0,0,0.9));
+        }
+
+        /* カメラ許可・起動案内モーダル（必要時） */
+        .start-overlay {
+            position: absolute;
+            inset: 0;
+            z-index: 100;
+            background: rgba(10, 15, 26, 0.85);
+            backdrop-filter: blur(15px);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .start-btn {
+            font-family: 'Zen Maru Gothic', sans-serif;
+            font-size: 2.2vw;
+            font-weight: 900;
+            color: #fff;
+            background: linear-gradient(135deg, #ff007f, #7928ca, #00f2fe);
+            border: none;
+            padding: 16px 45px;
+            border-radius: 999px;
+            cursor: pointer;
+            box-shadow: 0 0 35px rgba(255, 0, 127, 0.5);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            margin-top: 25px;
+        }
+
+        .start-btn:hover {
+            transform: scale(1.06);
+            box-shadow: 0 0 50px rgba(0, 242, 254, 0.8);
+        }
+
+        .start-note {
+            margin-top: 15px;
+            font-size: 1.1vw;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- SVG共通グラデーション定義 -->
+    <svg width="0" height="0" style="position: absolute;">
+        <defs>
+            <!-- 通常時：リッチなすりガラスグラデーション -->
+            <linearGradient id="glassGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="rgba(255, 255, 255, 0.45)" />
+                <stop offset="50%" stop-color="rgba(255, 255, 255, 0.18)" />
+                <stop offset="100%" stop-color="rgba(255, 255, 255, 0.08)" />
+            </linearGradient>
+
+            <!-- 華道部アクティブ：エメラルドネオングラデーション -->
+            <linearGradient id="greenGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#00ffaa" />
+                <stop offset="60%" stop-color="#10b981" />
+                <stop offset="100%" stop-color="#047857" />
+            </linearGradient>
+
+            <!-- PR動画アクティブ：ビビッドピンクグラデーション -->
+            <linearGradient id="pinkGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ff007f" />
+                <stop offset="60%" stop-color="#ff2a85" />
+                <stop offset="100%" stop-color="#be185d" />
+            </linearGradient>
+
+            <!-- 各ブースアクティブ：ゴールドシアンイエローグラデーション -->
+            <linearGradient id="goldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#ffd60a" />
+                <stop offset="60%" stop-color="#f59e0b" />
+                <stop offset="100%" stop-color="#00f2fe" />
+            </linearGradient>
+        </defs>
+    </svg>
+
+    <!-- Webカメラ映像（鏡像） -->
+    <video id="webcam" autoplay playsinline muted></video>
+    <div class="camera-dimmer"></div>
+
+    <!-- パーティクルエフェクト用Canvas -->
+    <canvas id="fxCanvas"></canvas>
+
+    <!-- 動体検知用オフスクリーンCanvas -->
+    <canvas id="motionCanvas"></canvas>
+
+    <!-- ガイドテキスト -->
+    <div class="top-hint">
+        <span>👋 矢印に手をかざして触れてみてね！</span>
+    </div>
+
+    <!-- ← 華道部インタラクティブゾーン（図形描画の大型矢印） -->
+    <div class="interactive-zone" id="target-left" data-type="flower">
+        <div class="giant-arrow">
+            <svg viewBox="0 0 200 200">
+                <!-- 左向きの幾何学ダイナミック矢印 -->
+                <path class="arrow-shape" d="M 125,25 
+                                             L 30,100 
+                                             L 125,175 
+                                             L 125,135 
+                                             L 185,135 
+                                             L 185,65 
+                                             L 125,65 
+                                             Z" />
+                <!-- 上部ハイライト光沢ライン -->
+                <path class="arrow-highlight" d="M 122,38 L 45,99 L 122,160" />
+            </svg>
+        </div>
+        <div class="revealed-text">華道部</div>
+    </div>
+
+    <!-- ↑ PR動画インタラクティブゾーン（図形描画の大型矢印） -->
+    <div class="interactive-zone" id="target-up" data-type="heart">
+        <div class="giant-arrow">
+            <svg viewBox="0 0 200 200">
+                <!-- 上向きの幾何学ダイナミック矢印 -->
+                <path class="arrow-shape" d="M 100,30 
+                                             L 25,125 
+                                             L 65,125 
+                                             L 65,185 
+                                             L 135,185 
+                                             L 135,125 
+                                             L 175,125 
+                                             Z" />
+                <!-- ハイライト光沢ライン -->
+                <path class="arrow-highlight" d="M 38,122 L 99,45 L 160,122" />
+            </svg>
+        </div>
+        <div class="revealed-text">PR動画</div>
+    </div>
+
+    <!-- → 各ブースインタラクティブゾーン（図形描画の大型矢印） -->
+    <div class="interactive-zone" id="target-right" data-type="star">
+        <div class="giant-arrow">
+            <svg viewBox="0 0 200 200">
+                <!-- 右向きの幾何学ダイナミック矢印 -->
+                <path class="arrow-shape" d="M 75,25 
+                                             L 170,100 
+                                             L 75,175 
+                                             L 75,135 
+                                             L 15,135 
+                                             L 15,65 
+                                             L 75,65 
+                                             Z" />
+                <!-- ハイライト光沢ライン -->
+                <path class="arrow-highlight" d="M 78,38 L 155,99 L 78,160" />
+            </svg>
+        </div>
+        <div class="revealed-text">各ブース</div>
+    </div>
+
+    <!-- カメラ未許可/エラー時のみ表示される案内オーバーレイ（通常時は非表示） -->
+    <div class="start-overlay" id="startOverlay" style="display: none;">
+        <h1 style="font-size: 3.5vw; margin-bottom: 10px; font-weight: 900;">体験型デジタルサイネージ</h1>
+        <p style="font-size: 1.5vw; color: #cbd5e1;">カメラを起動して、画面の浮遊矢印に手を伸ばして触れてみよう！</p>
+        <button class="start-btn" id="startBtn">カメラを起動してスタート 📷✨</button>
+        <p class="start-note">※カメラ映像はローカル（お使いのPC内）でのみ処理され、外部には一切送信されません。</p>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const fxCanvas = document.getElementById('fxCanvas');
+        const fxCtx = fxCanvas.getContext('2d');
+        const motionCanvas = document.getElementById('motionCanvas');
+        const motionCtx = motionCanvas.getContext('2d', { willReadFrequently: true });
+        const startOverlay = document.getElementById('startOverlay');
+        const startBtn = document.getElementById('startBtn');
+
+        const targets = [
+            { el: document.getElementById('target-left'), type: 'flower', activeUntil: 0 },
+            { el: document.getElementById('target-up'), type: 'heart', activeUntil: 0 },
+            { el: document.getElementById('target-right'), type: 'star', activeUntil: 0 }
+        ];
+
+        // Canvasサイズリサイズ
+        function resize() {
+            fxCanvas.width = window.innerWidth;
+            fxCanvas.height = window.innerHeight;
+            // 動体検知用は軽量化のため解像度を落とす
+            motionCanvas.width = 160;
+            motionCanvas.height = 90;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // カメラ起動処理
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: "user"
+                    },
+                    audio: false
+                });
+                video.srcObject = stream;
+                await video.play();
+                startOverlay.style.display = 'none';
+                startMotionDetection();
+            } catch (err) {
+                console.warn("Camera auto-start failed or waiting for permission:", err);
+                // エラーまたは手動許可が必要な場合のみオーバーレイを表示
+                startOverlay.style.display = 'flex';
+                startOverlay.innerHTML = `
+                    <h2 style="font-size: 2.2vw; color: #ff007f;">カメラへのアクセス許可が必要です</h2>
+                    <p style="font-size: 1.2vw; margin: 15px 0; color: #cbd5e1;">
+                        ※ブラウザの設定でカメラを「常に許可」にしておくと、次回から自動で起動します。<br>
+                        または、画面上の矢印を直接タップ/マウスオーバーしても体験できます。
+                    </p>
+                    <div style="display: flex; gap: 20px;">
+                        <button class="start-btn" onclick="startCamera()">カメラを再試行 📷</button>
+                        <button class="start-btn" style="background: rgba(255,255,255,0.2);" onclick="startOverlay.style.display='none'">スキップして続ける</button>
+                    </div>
+                `;
+            }
+        }
+        startBtn.addEventListener('click', startCamera);
+
+        // ページ読み込み時に自動でカメラ起動を実行
+        window.addEventListener('DOMContentLoaded', () => {
+            startCamera();
+        });
+
+        // マウスやタッチでのフォールバック操作（手を伸ばせない時でも体験可能）
+        targets.forEach(t => {
+            const triggerZone = () => triggerActive(t, 2500);
+            t.el.addEventListener('mouseenter', triggerZone);
+            t.el.addEventListener('click', triggerZone);
+            t.el.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                triggerZone();
+            });
+        });
+
+        // ゾーンがアクティブになったときの処理
+        function triggerActive(target, duration = 400) {
+            const now = performance.now();
+            const wasInactive = target.activeUntil < now;
+            target.activeUntil = now + duration;
+            target.el.classList.add('active');
+
+            // 新規アクティブ時、または定期的にパーティクルを放出
+            const rect = target.el.getBoundingClientRect();
+            const cx = rect.left + rect.width / 2;
+            const cy = rect.top + rect.height / 2;
+
+            spawnParticles(target.type, cx, cy, wasInactive ? 28 : 2);
+        }
+
+        // ==========================================
+        // 純粋なJavaScriptによる動体検知（モーション検出）
+        // ==========================================
+        let prevFrame = null;
+
+        function startMotionDetection() {
+            function checkMotion() {
+                if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                    // 反転させたビデオを描画して前フレームと比較
+                    motionCtx.save();
+                    motionCtx.scale(-1, 1);
+                    motionCtx.drawImage(video, -motionCanvas.width, 0, motionCanvas.width, motionCanvas.height);
+                    motionCtx.restore();
+
+                    const currentFrame = motionCtx.getImageData(0, 0, motionCanvas.width, motionCanvas.height);
+
+                    if (prevFrame) {
+                        const now = performance.now();
+
+                        // 各矢印ターゲットの画面内位置をモーションCanvas座標系にマッピング
+                        targets.forEach(t => {
+                            const rect = t.el.getBoundingClientRect();
+                            const x1 = Math.floor((rect.left / window.innerWidth) * motionCanvas.width);
+                            const y1 = Math.floor((rect.top / window.innerHeight) * motionCanvas.height);
+                            const x2 = Math.floor((rect.right / window.innerWidth) * motionCanvas.width);
+                            const y2 = Math.floor((rect.bottom / window.innerHeight) * motionCanvas.height);
+
+                            // ターゲットエリア内のピクセル変化量を計算
+                            let diffCount = 0;
+                            let totalSamples = 0;
+
+                            for (let y = Math.max(0, y1); y < Math.min(motionCanvas.height, y2); y += 2) {
+                                for (let x = Math.max(0, x1); x < Math.min(motionCanvas.width, x2); x += 2) {
+                                    const idx = (y * motionCanvas.width + x) * 4;
+                                    const rDiff = Math.abs(currentFrame.data[idx] - prevFrame.data[idx]);
+                                    const gDiff = Math.abs(currentFrame.data[idx+1] - prevFrame.data[idx+1]);
+                                    const bDiff = Math.abs(currentFrame.data[idx+2] - prevFrame.data[idx+2]);
+
+                                    if (rDiff + gDiff + bDiff > 60) {
+                                        diffCount++;
+                                    }
+                                    totalSamples++;
+                                }
+                            }
+
+                            // 領域内の動きの割合が閾値を超えたらアクティブ状態を維持・更新
+                            const motionRatio = totalSamples > 0 ? (diffCount / totalSamples) : 0;
+                            if (motionRatio > 0.06) {
+                                triggerActive(t, 450);
+                            }
+                        });
+                    }
+
+                    prevFrame = currentFrame;
+                }
+
+                // アクティブ期限切れのチェック（手を離すと即座に初期のモノトーン状態に戻る）
+                const now = performance.now();
+                targets.forEach(t => {
+                    if (t.activeUntil < now && t.el.classList.contains('active')) {
+                        t.el.classList.remove('active');
+                    }
+                });
+
+                requestAnimationFrame(checkMotion);
+            }
+            checkMotion();
+        }
+
+        // ==========================================
+        // キラキラ＆花・ハート・星のパーティクルエンジン
+        // ==========================================
+        const particles = [];
+
+        class Particle {
+            constructor(type, x, y) {
+                this.type = type;
+                this.x = x + (Math.random() - 0.5) * 60;
+                this.y = y + (Math.random() - 0.5) * 60;
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 6 + 2;
+                this.vx = Math.cos(angle) * speed;
+                this.vy = Math.sin(angle) * speed - 2;
+                this.size = Math.random() * 18 + 12;
+                this.life = 1.0;
+                this.decay = Math.random() * 0.02 + 0.015;
+                this.rotation = Math.random() * 360;
+                this.rotSpeed = (Math.random() - 0.5) * 8;
+
+                // タイプごとのカラー設定
+                if (type === 'flower') {
+                    const colors = ['#f43f5e', '#fb7185', '#34d399', '#a7f3d0', '#ffffff'];
+                    this.color = colors[Math.floor(Math.random() * colors.length)];
+                } else if (type === 'heart') {
+                    const colors = ['#ff007f', '#ff4d6d', '#ff758f', '#ffccd5', '#ffffff'];
+                    this.color = colors[Math.floor(Math.random() * colors.length)];
+                } else { // star
+                    const colors = ['#ffd60a', '#ffbe0b', '#00f2fe', '#ffffff', '#e0e7ff'];
+                    this.color = colors[Math.floor(Math.random() * colors.length)];
+                }
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.08; // ゆるやかな重力
+                this.vx *= 0.98;
+                this.rotation += this.rotSpeed;
+                this.life -= this.decay;
+            }
+
+            draw(ctx) {
+                ctx.save();
+                ctx.globalAlpha = Math.max(0, this.life);
+                ctx.translate(this.x, this.y);
+                ctx.rotate(this.rotation * Math.PI / 180);
+                ctx.fillStyle = this.color;
+                ctx.shadowColor = this.color;
+                ctx.shadowBlur = 15;
+
+                if (this.type === 'flower') {
+                    // お花・桜の花びらエフェクト
+                    ctx.beginPath();
+                    for (let i = 0; i < 5; i++) {
+                        ctx.rotate((Math.PI * 2) / 5);
+                        ctx.ellipse(0, this.size * 0.5, this.size * 0.28, this.size * 0.5, 0, 0, Math.PI * 2);
+                    }
+                    ctx.fill();
+                    // 花の中心
+                    ctx.beginPath();
+                    ctx.fillStyle = '#fff';
+                    ctx.arc(0, 0, this.size * 0.2, 0, Math.PI * 2);
+                    ctx.fill();
+
+                } else if (this.type === 'heart') {
+                    // ハートエフェクト
+                    const s = this.size * 0.7;
+                    ctx.beginPath();
+                    ctx.moveTo(0, s * 0.3);
+                    ctx.bezierCurveTo(-s, -s * 0.6, -s * 1.3, s * 0.4, 0, s * 1.3);
+                    ctx.bezierCurveTo(s * 1.3, s * 0.4, s, -s * 0.6, 0, s * 0.3);
+                    ctx.fill();
+
+                } else {
+                    // 星エフェクト
+                    const rOut = this.size * 0.9;
+                    const rIn = rOut * 0.45;
+                    ctx.beginPath();
+                    for (let i = 0; i < 5; i++) {
+                        ctx.lineTo(Math.cos((18 + i * 72) * Math.PI / 180) * rOut, -Math.sin((18 + i * 72) * Math.PI / 180) * rOut);
+                        ctx.lineTo(Math.cos((54 + i * 72) * Math.PI / 180) * rIn, -Math.sin((54 + i * 72) * Math.PI / 180) * rIn);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                ctx.restore();
+            }
+        }
+
+        function spawnParticles(type, x, y, count) {
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle(type, x, y));
+            }
+        }
+
+        // パーティクルアニメーションループ
+        function renderParticles() {
+            fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
+
+            // アクティブ中のターゲットから継続的に微粒子を放出
+            targets.forEach(t => {
+                if (t.el.classList.contains('active') && Math.random() > 0.4) {
+                    const rect = t.el.getBoundingClientRect();
+                    const cx = rect.left + rect.width / 2;
+                    const cy = rect.top + rect.height / 2;
+                    spawnParticles(t.type, cx, cy, 1);
+                }
+            });
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.update();
+                p.draw(fxCtx);
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+
+            requestAnimationFrame(renderParticles);
+        }
+        renderParticles();
+    </script>
+</body>
+</html>
