@@ -571,16 +571,17 @@
                                     const gDiff = Math.abs(currentFrame.data[idx+1] - prevFrame.data[idx+1]);
                                     const bDiff = Math.abs(currentFrame.data[idx+2] - prevFrame.data[idx+2]);
 
-                                    if (rDiff + gDiff + bDiff > 60) {
+                                    // ピクセル変化の感度（微弱なノイズを無視し、しっかりした動きを捉える）
+                                    if (rDiff + gDiff + bDiff > 85) {
                                         diffCount++;
                                     }
                                     totalSamples++;
                                 }
                             }
 
-                            // 領域内の動きの割合が閾値を超えたらアクティブ状態を維持・更新
+                            // 領域内の動きの割合（16%以上のしっかりとした動き・手の進入で反応）
                             const motionRatio = totalSamples > 0 ? (diffCount / totalSamples) : 0;
-                            if (motionRatio > 0.06) {
+                            if (motionRatio > 0.16) {
                                 triggerActive(t, 450);
                             }
                         });
