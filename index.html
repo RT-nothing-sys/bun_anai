@@ -322,6 +322,38 @@
             font-size: 1.1vw;
             color: #94a3b8;
         }
+
+        /* カメラ切替フローティングボタン */
+        .camera-switch-btn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            z-index: 50;
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            color: #ffffff;
+            font-family: 'Zen Maru Gothic', sans-serif;
+            font-size: 0.95vw;
+            font-weight: 800;
+            padding: 10px 18px;
+            border-radius: 999px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            opacity: 0.7;
+            transition: all 0.3s ease;
+        }
+
+        .camera-switch-btn:hover {
+            opacity: 1;
+            transform: scale(1.06);
+            background: rgba(255, 0, 127, 0.65);
+            border-color: rgba(255, 0, 127, 0.8);
+            box-shadow: 0 0 25px rgba(255, 0, 127, 0.6);
+        }
     </style>
 </head>
 <body>
@@ -434,6 +466,12 @@
         <div class="revealed-text">各ブース</div>
     </div>
 
+    <!-- カメラ切替用フローティングボタン（右下隅） -->
+    <button id="cameraSwitchBtn" class="camera-switch-btn" onclick="switchCamera()" title="カメラ切り替え (または画面ダブルタップ / Cキー)">
+        <span>📷</span>
+        <span class="switch-btn-label">カメラ切替</span>
+    </button>
+
     <!-- カメラ未許可/エラー時のみ表示される案内オーバーレイ（通常時は非表示） -->
     <div class="start-overlay" id="startOverlay" style="display: none;">
         <h1 style="font-size: 3.5vw; margin-bottom: 10px; font-weight: 900;">体験型デジタルサイネージ</h1>
@@ -468,23 +506,80 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // カメラ起動処理
-        async function startCamera() {
+        // カメラ切り替え・デバイス管理用変数
+        let availableVideoDevices = [];
+        let currentDeviceIndex = 0;
+        let currentStream = null;
+
+        // 利用可能なカメラ一覧を取得し、USB外付けカメラを優先してインデックスを決定
+        async function getAvailableCameras() {
             try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                availableVideoDevices = devices.filter(d => d.kind === 'videoinput');
+                
+                // デバイスが複数ある場合、内蔵と思われるものを除外した外付けカメラを優先
+                if (availableVideoDevices.length > 1) {
+                    const extIndex = availableVideoDevices.findIndex(d => {
+                        const lbl = (d.label || '').toLowerCase();
+                        return !(lbl.includes('integrated') || lbl.includes('internal') || lbl.includes('built-in') || lbl.includes('内蔵'));
+                    });
+                    if (extIndex !== -1) {
+                        currentDeviceIndex = extIndex;
+                    }
+                }
+            } catch (e) {
+                console.warn("enumerateDevices error:", e);
+            }
+        }
+
+        // カメラ起動処理（USB外付け優先）
+        async function startCamera(deviceId = null) {
+            try {
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+
+                // カメラ一覧をまだ取得していない場合
+                if (availableVideoDevices.length === 0) {
+                    // 一旦デフォルトで一時ストリームを開いてパーミッションを得てから一覧を取得
+                    try {
+                        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                        tempStream.getTracks().forEach(t => t.stop());
+                        await getAvailableCameras();
+                    } catch (e) {
+                        // パーミッション待ち等の場合
+                    }
+                }
+
+                let videoConstraints = {
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                };
+
+                const targetDevice = deviceId || (availableVideoDevices[currentDeviceIndex] ? availableVideoDevices[currentDeviceIndex].deviceId : null);
+
+                if (targetDevice) {
+                    videoConstraints.deviceId = { exact: targetDevice };
+                } else {
+                    videoConstraints.facingMode = "user";
+                }
+
                 const stream = await navigator.mediaDevices.getUserMedia({
-                    video: {
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        facingMode: "user"
-                    },
+                    video: videoConstraints,
                     audio: false
                 });
+
+                currentStream = stream;
                 video.srcObject = stream;
                 await video.play();
                 startOverlay.style.display = 'none';
+
+                // カメラ切り替えボタンの表示更新
+                updateCameraSwitchUI();
+
                 startMotionDetection();
             } catch (err) {
-                console.warn("Camera auto-start failed or waiting for permission:", err);
+                console.warn("Camera start failed or waiting for permission:", err);
                 // エラーまたは手動許可が必要な場合のみオーバーレイを表示
                 startOverlay.style.display = 'flex';
                 startOverlay.innerHTML = `
@@ -500,7 +595,43 @@
                 `;
             }
         }
-        startBtn.addEventListener('click', startCamera);
+        startBtn.addEventListener('click', () => startCamera());
+
+        // 次のカメラへ切り替える関数
+        async function switchCamera() {
+            if (availableVideoDevices.length <= 1) {
+                await getAvailableCameras();
+            }
+            if (availableVideoDevices.length > 1) {
+                currentDeviceIndex = (currentDeviceIndex + 1) % availableVideoDevices.length;
+                const nextDevice = availableVideoDevices[currentDeviceIndex];
+                await startCamera(nextDevice.deviceId);
+            }
+        }
+
+        // カメラ切替UIの更新
+        function updateCameraSwitchUI() {
+            const switchBtn = document.getElementById('cameraSwitchBtn');
+            if (switchBtn) {
+                if (availableVideoDevices.length > 1) {
+                    switchBtn.style.display = 'flex';
+                    const devName = availableVideoDevices[currentDeviceIndex]?.label || `カメラ ${currentDeviceIndex + 1}`;
+                    switchBtn.title = `現在: ${devName} (クリック/タップで切替)`;
+                } else {
+                    switchBtn.style.display = 'flex'; // 1台でも明示的に手動再スキャンできるように表示
+                }
+            }
+        }
+
+        // キーボード 'C' キーまたは画面ダブルクリックでカメラ切り替え
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'c' || e.key === 'C') {
+                switchCamera();
+            }
+        });
+        window.addEventListener('dblclick', () => {
+            switchCamera();
+        });
 
         // ページ読み込み時に自動でカメラ起動を実行
         window.addEventListener('DOMContentLoaded', () => {
