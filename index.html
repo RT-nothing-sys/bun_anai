@@ -233,7 +233,7 @@
                     drop-shadow(0 8px 16px rgba(0,0,0,0.9));
         }
 
-        /* ↑ PR動画（アクティブ：ビビッドネオンピンク） */
+        /* ↑ 休憩所（アクティブ：ビビッドネオンピンク） */
         .interactive-zone.active#target-up .giant-arrow {
             transform: scale(1.18);
             filter: drop-shadow(0 0 40px #ff007f) 
@@ -250,11 +250,29 @@
             transform: translateX(-50%) scale(1);
             color: #ffffff;
             background: linear-gradient(135deg, #ffffff 0%, #ff4d6d 35%, #ff007f 100%);
+            background-clip: text;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             filter: drop-shadow(0 0 25px rgba(255, 0, 127, 1)) 
                     drop-shadow(0 0 50px rgba(255, 77, 109, 0.9))
                     drop-shadow(0 8px 16px rgba(0,0,0,0.9));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+        .interactive-zone.active#target-up .revealed-sub {
+            font-size: 1.6vw;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            color: #ffd60a;
+            background: rgba(0, 0, 0, 0.7);
+            border: 2px solid #ffd60a;
+            padding: 4px 16px;
+            border-radius: 999px;
+            -webkit-text-fill-color: #ffd60a;
+            filter: none;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.6);
         }
 
         /* → 各ブース（アクティブ：ビビッドゴールド＆シアン） */
@@ -426,7 +444,7 @@
         <div class="revealed-text">華道部</div>
     </div>
 
-    <!-- ↑ PR動画インタラクティブゾーン（図形描画の大型矢印） -->
+    <!-- ↑ 休憩所インタラクティブゾーン（図形描画の大型矢印） -->
     <div class="interactive-zone" id="target-up" data-type="heart">
         <div class="giant-arrow">
             <svg viewBox="0 0 200 200">
@@ -443,7 +461,10 @@
                 <path class="arrow-highlight" d="M 38,122 L 99,45 L 160,122" />
             </svg>
         </div>
-        <div class="revealed-text">PR動画</div>
+        <div class="revealed-text">
+            <span>休憩所</span>
+            <span class="revealed-sub">⚠️ 土足禁止・飲食禁止</span>
+        </div>
     </div>
 
     <!-- → 各ブースインタラクティブゾーン（図形描画の大型矢印） -->
